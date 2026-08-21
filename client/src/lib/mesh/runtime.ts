@@ -1,5 +1,5 @@
 import { createPacket, decodePacket, encodePacket } from "./packet";
-import type { MeshPacket, NodeIdentity, PeerSnapshot } from "./types";
+import type { MeshPacket, NodeIdentity, PairingAuditDraft, PairingAuditEvent, PeerSnapshot } from "./types";
 
 type SignalingMessage =
   | { kind: "presence"; source: string; identity: NodeIdentity; sentAt: number }
@@ -26,6 +26,7 @@ type MeshRuntimeOptions = {
   onPeers: (peers: PeerSnapshot[]) => void;
   getSnapshotPackets: () => MeshPacket[];
   lowBandwidth: () => boolean;
+  onManualAudit?: (draft: PairingAuditDraft) => void;
 };
 
 const CHANNEL_NAME = "tactical-mesh-signal-v1";
@@ -111,7 +112,9 @@ export class MeshRuntime {
     this.manualPairings.set(sessionId, { remoteId, connection, confirmationCode });
     this.bindDataChannel(remoteId, connection.createDataChannel("mesh-ops"));
     const sdp = await this.createCompleteDescription(connection, "offer");
-    return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId, type: "offer", from: this.identity, confirmationCode, sdp, createdAt: Date.now() } satisfies ManualSignalEnvelope);
+    const createdAt = Date.now();
+    this.recordManualAudit("OFFER_CREATED", sessionId, { nodeId: remoteId, callsign: "REMOTE-PENDING", status: "SILENT", updatedAt: createdAt }, confirmationCode, createdAt);
+    return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId, type: "offer", from: this.identity, confirmationCode, sdp, createdAt } satisfies ManualSignalEnvelope);
   }
 
   async acceptManualSignal(raw: string): Promise<string | null> {
@@ -126,8 +129,11 @@ export class MeshRuntime {
       this.manualPairings.set(signal.sessionId, { remoteId, connection, confirmationCode: signal.confirmationCode });
       this.touchPeer(remoteId, signal.from);
       await connection.setRemoteDescription(signal.sdp);
+      this.recordManualAudit("OFFER_ACCEPTED", signal.sessionId, signal.from, signal.confirmationCode);
       const sdp = await this.createCompleteDescription(connection, "answer");
-      return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId: signal.sessionId, type: "answer", from: this.identity, confirmationCode: signal.confirmationCode, sdp, createdAt: Date.now() } satisfies ManualSignalEnvelope);
+      const createdAt = Date.now();
+      this.recordManualAudit("ANSWER_CREATED", signal.sessionId, signal.from, signal.confirmationCode, createdAt);
+      return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId: signal.sessionId, type: "answer", from: this.identity, confirmationCode: signal.confirmationCode, sdp, createdAt } satisfies ManualSignalEnvelope);
     }
     const pairing = this.manualPairings.get(signal.sessionId);
     if (!pairing) throw new Error("No pending manual pairing session matches this answer.");
@@ -137,7 +143,12 @@ export class MeshRuntime {
     peer.status = signal.from.status;
     await pairing.connection.setRemoteDescription(signal.sdp);
     this.emitPeers();
+    this.recordManualAudit("ANSWER_VERIFIED", signal.sessionId, signal.from, signal.confirmationCode);
     return null;
+  }
+
+  private recordManualAudit(event: PairingAuditEvent, sessionId: string, peer: NodeIdentity, confirmationCode: string, timestamp = Date.now()): void {
+    this.options.onManualAudit?.({ id: crypto.randomUUID(), sessionId, event, actor: { ...this.identity }, peer: { ...peer }, confirmationCode, timestamp });
   }
 
   private announce(): void {

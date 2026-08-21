@@ -1,11 +1,11 @@
 import type { IncidentZone, IncidentZoneType, ResourceEntry } from "@/lib/mesh/types";
 import { coordinateFromPointer, createIncidentZone, selectZoneForEditing, updateIncidentZone } from "@/lib/mesh/zoneEditor";
-import { Crosshair, Edit3, MapPinned, Minus, Move, Plus, RadioTower, Save, Undo2, X } from "lucide-react";
+import { Crosshair, Edit3, MapPinned, Minus, Move, Plus, RadioTower, Redo2, Save, Undo2, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 const zoneColors: Record<IncidentZoneType, string> = { HAZARD: "#ef5b5b", STAGING: "#39d98a", SEARCH: "#f2bd4f", RESTRICTED: "#a998ff" };
 
-export function TacticalSituationMap({ resources, zones, onAddZone, onUpdateZone, onPreviewZone, onBeginZoneGesture, onRemoveZone, onUndo, undoDepth }: {
+export function TacticalSituationMap({ resources, zones, onAddZone, onUpdateZone, onPreviewZone, onBeginZoneGesture, onRemoveZone, onUndo, onRedo, undoDepth, redoDepth }: {
   resources: ResourceEntry[];
   zones: IncidentZone[];
   onAddZone: (zone: IncidentZone) => void;
@@ -14,7 +14,9 @@ export function TacticalSituationMap({ resources, zones, onAddZone, onUpdateZone
   onBeginZoneGesture: () => void;
   onRemoveZone: (zoneId: string) => void;
   onUndo: () => void;
+  onRedo: () => void;
   undoDepth: number;
+  redoDepth: number;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [label, setLabel] = useState("");
@@ -79,7 +81,7 @@ export function TacticalSituationMap({ resources, zones, onAddZone, onUpdateZone
             <g><circle cx="50" cy="50" r="3.8" fill="#ff8e25" opacity=".12" /><circle cx="50" cy="50" r="1.4" fill="#ff8e25" /><path d="M50 44 v12 M44 50 h12" stroke="#ff8e25" strokeWidth=".35" /></g>
           </svg>
           <div className="absolute left-3 top-3 flex items-center gap-2"><span className="tac-chip"><Crosshair size={10} /> INCIDENT OVERLAY</span><span className="tac-chip text-slate-400">{zones.length} ZONES</span></div>
-          <button className="tac-chip absolute right-3 top-3 disabled:opacity-40" disabled={!undoDepth} onClick={onUndo}><Undo2 size={10} /> UNDO {undoDepth ? `(${undoDepth})` : ""}</button>
+          <div className="absolute right-3 top-3 flex gap-1"><button className="tac-chip disabled:opacity-40" disabled={!undoDepth} onClick={onUndo}><Undo2 size={10} /> UNDO {undoDepth ? `(${undoDepth})` : ""}</button><button className="tac-chip disabled:opacity-40" disabled={!redoDepth} onClick={onRedo}><Redo2 size={10} /> REDO {redoDepth ? `(${redoDepth})` : ""}</button></div>
           <div className="absolute bottom-3 left-3 flex items-center gap-1 text-[9px] tracking-[.11em] text-slate-500"><Move size={11} /> DRAG A ZONE TO REPOSITION // {resources.filter(resource => resource.coordinate).length} GEO-TAGGED ASSETS</div>
         </div>
         <div className="space-y-3">

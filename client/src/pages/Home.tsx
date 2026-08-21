@@ -1,11 +1,13 @@
 import { encryptMeshState } from "@/lib/mesh/crypto";
 import { ArchiveRecoveryPanel } from "@/components/ArchiveRecoveryPanel";
 import { ManualPairingPanel } from "@/components/ManualPairingPanel";
+import { PairingAuditPanel } from "@/components/PairingAuditPanel";
 import { TacticalSituationMap } from "@/components/TacticalSituationMap";
 import { createPacket } from "@/lib/mesh/packet";
 import { MeshRuntime } from "@/lib/mesh/runtime";
 import { readMeshState, writeMeshState } from "@/lib/mesh/store";
-import { pushZoneHistory, takeZoneUndo } from "@/lib/mesh/zoneHistory";
+import { signPairingAudit } from "@/lib/mesh/audit";
+import { createZoneHistory, pushZoneHistory, takeZoneRedo, takeZoneUndo, type ZoneHistoryState } from "@/lib/mesh/zoneHistory";
 import {
   mergePacketIntoState,
   type AlertPriority,
@@ -169,8 +171,9 @@ export default function Home() {
   const [resourceStatus, setResourceStatus] = useState<ResourceStatus>("AVAILABLE");
   const [resourceX, setResourceX] = useState("50");
   const [resourceY, setResourceY] = useState("50");
-  const zoneHistoryRef = useRef<IncidentZone[][]>([]);
+  const zoneHistoryRef = useRef<ZoneHistoryState>(createZoneHistory());
   const [zoneUndoDepth, setZoneUndoDepth] = useState(0);
+  const [zoneRedoDepth, setZoneRedoDepth] = useState(0);
 
   const updateMesh = useCallback((updater: (current: MeshState) => MeshState) => {
     setMesh(current => {
@@ -183,7 +186,8 @@ export default function Home() {
 
   const rememberZones = useCallback((zones: IncidentZone[]) => {
     zoneHistoryRef.current = pushZoneHistory(zoneHistoryRef.current, zones);
-    setZoneUndoDepth(zoneHistoryRef.current.length);
+    setZoneUndoDepth(zoneHistoryRef.current.undo.length);
+    setZoneRedoDepth(zoneHistoryRef.current.redo.length);
   }, []);
 
   const commitZoneChange = useCallback((mutator: (zones: IncidentZone[]) => IncidentZone[]) => {
@@ -202,12 +206,23 @@ export default function Home() {
   }, [rememberZones]);
 
   const undoZoneChange = useCallback(() => {
-    const undo = takeZoneUndo(zoneHistoryRef.current);
+    const undo = takeZoneUndo(zoneHistoryRef.current, meshRef.current?.zones ?? []);
     if (!undo.snapshot) return;
     zoneHistoryRef.current = undo.history;
-    setZoneUndoDepth(zoneHistoryRef.current.length);
+    setZoneUndoDepth(zoneHistoryRef.current.undo.length);
+    setZoneRedoDepth(zoneHistoryRef.current.redo.length);
     updateMesh(current => ({ ...current, zones: undo.snapshot ?? current.zones, updatedAt: Date.now() }));
-    toast.success("Last incident-zone change reverted locally.");
+    toast.success("Incident-zone change reverted locally.");
+  }, [updateMesh]);
+
+  const redoZoneChange = useCallback(() => {
+    const redo = takeZoneRedo(zoneHistoryRef.current, meshRef.current?.zones ?? []);
+    if (!redo.snapshot) return;
+    zoneHistoryRef.current = redo.history;
+    setZoneUndoDepth(zoneHistoryRef.current.undo.length);
+    setZoneRedoDepth(zoneHistoryRef.current.redo.length);
+    updateMesh(current => ({ ...current, zones: redo.snapshot ?? current.zones, updatedAt: Date.now() }));
+    toast.success("Incident-zone change restored locally.");
   }, [updateMesh]);
 
   useEffect(() => {
@@ -244,6 +259,7 @@ export default function Home() {
       },
       onPeers: nextPeers => { peerBuffer.current = nextPeers; },
       onPacket: packet => updateMesh(current => mergePacketIntoState(current, packet)),
+      onManualAudit: draft => { void signPairingAudit(draft).then(audit => updateMesh(current => current.pairingAudits.some(item => item.id === audit.id) ? current : { ...current, pairingAudits: [audit, ...current.pairingAudits].slice(0, 60), updatedAt: Date.now() })).catch(() => toast.error("Pairing audit could not be signed locally.")); },
     });
     runtimeRef.current = runtime;
     runtime.start();
@@ -416,6 +432,7 @@ export default function Home() {
               setMesh(recovered);
             }} />
             <ManualPairingPanel getRuntime={() => runtimeRef.current} />
+            <PairingAuditPanel audits={mesh.pairingAudits} />
           </aside>
 
           <div className="space-y-3 min-w-0">
@@ -450,7 +467,9 @@ export default function Home() {
               onBeginZoneGesture={beginZoneGesture}
               onRemoveZone={zoneId => commitZoneChange(zones => zones.filter(zone => zone.id !== zoneId))}
               onUndo={undoZoneChange}
+              onRedo={redoZoneChange}
               undoDepth={zoneUndoDepth}
+              redoDepth={zoneRedoDepth}
             />
 
             <div className="grid gap-3 2xl:grid-cols-[minmax(0,1.2fr)_minmax(370px,.8fr)]">

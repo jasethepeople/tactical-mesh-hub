@@ -47,3 +47,8 @@
 - [x] Add pairing status feedback that instructs operators to compare confirmation codes before processing the final answer.
 - [x] Add automated coverage and browser verification for archive diffs, zone undo, and pairing-code workflows.
 - [x] Verify record-level NEW, CHANGED, and UNCHANGED archive diff rows render in the live recovery review before resolution.
+- [x] Add per-record archive merge selection for individual alerts, resources, and zones before applying recovery.
+- [x] Extend zone history into bounded multi-step undo and redo stacks for all committed map changes.
+- [x] Add a signed local pairing transcript with session, confirmation code, peer identity, and timestamp fields.
+- [x] Add a downloadable pairing-audit transcript export that never leaves the browser without operator action.
+- [x] Add automated coverage and browser verification for record selection, multi-step history, and signed pairing audit workflows.

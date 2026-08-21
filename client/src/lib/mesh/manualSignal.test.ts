@@ -50,7 +50,8 @@ describe("manual device-pairing payloads", () => {
 
     const original = globalThis.RTCPeerConnection;
     Object.defineProperty(globalThis, "RTCPeerConnection", { value: StubConnection, configurable: true });
-    const runtime = new MeshRuntime({ identity: validOffer.from, lowBandwidth: () => false, getSnapshotPackets: () => [], onPacket: () => undefined, onPeers: () => undefined });
+    const auditEvents: string[] = [];
+    const runtime = new MeshRuntime({ identity: validOffer.from, lowBandwidth: () => false, getSnapshotPackets: () => [], onPacket: () => undefined, onPeers: () => undefined, onManualAudit: audit => auditEvents.push(audit.event) });
     const offer = parseManualSignal(await runtime.createManualOffer());
     expect(offer.sdp.sdp).toContain("a=candidate:");
     expect(offer.confirmationCode).toBe(createPairingConfirmationCode(offer.sessionId, "ALPHA001"));
@@ -59,6 +60,9 @@ describe("manual device-pairing payloads", () => {
     const answer = parseManualSignal(response as string);
     expect(answer.sdp.sdp).toContain("a=candidate:");
     expect(answer.confirmationCode).toBe(remoteOffer.confirmationCode);
+    const returnedAnswer = { ...validOffer, sessionId: offer.sessionId, type: "answer" as const, from: remoteOffer.from, confirmationCode: offer.confirmationCode, sdp: { type: "answer", sdp: "v=0\r\na=candidate:3 1 udp 1 192.168.1.12 5002 typ host\r\n" } };
+    await runtime.acceptManualSignal(JSON.stringify(returnedAnswer));
+    expect(auditEvents).toEqual(expect.arrayContaining(["OFFER_CREATED", "OFFER_ACCEPTED", "ANSWER_CREATED", "ANSWER_VERIFIED"]));
     Object.defineProperty(globalThis, "RTCPeerConnection", { value: original, configurable: true });
   });
 });

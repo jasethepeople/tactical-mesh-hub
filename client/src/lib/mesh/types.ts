@@ -62,6 +62,24 @@ export type PeerSnapshot = {
   lastSeen: number;
 };
 
+export type PairingAuditEvent = "OFFER_CREATED" | "OFFER_ACCEPTED" | "ANSWER_CREATED" | "ANSWER_VERIFIED";
+
+export type PairingAuditDraft = {
+  id: string;
+  sessionId: string;
+  event: PairingAuditEvent;
+  actor: NodeIdentity;
+  peer: NodeIdentity;
+  confirmationCode: string;
+  timestamp: number;
+};
+
+export type PairingAuditTranscript = PairingAuditDraft & {
+  signature: string;
+  algorithm: "ECDSA-P256-SHA256";
+  publicKey: JsonWebKey;
+};
+
 export type MeshState = {
   version: 1;
   identity: NodeIdentity;
@@ -69,6 +87,7 @@ export type MeshState = {
   resources: ResourceEntry[];
   zones: IncidentZone[];
   peerSnapshots: PeerSnapshot[];
+  pairingAudits: PairingAuditTranscript[];
   lowBandwidth: boolean;
   updatedAt: number;
 };
@@ -104,6 +123,12 @@ export type ArchiveDiffRecord = {
   archiveTimestamp: number;
 };
 
+export type ArchiveRecordSelection = {
+  messages: string[];
+  resources: string[];
+  zones: string[];
+};
+
 export const createIdentity = (): NodeIdentity => {
   const nodeId = crypto.randomUUID().slice(0, 8).toUpperCase();
   return {
@@ -121,6 +146,7 @@ export const createEmptyMeshState = (): MeshState => ({
   resources: [],
   zones: [],
   peerSnapshots: [],
+  pairingAudits: [],
   lowBandwidth: false,
   updatedAt: Date.now(),
 });
@@ -141,6 +167,7 @@ export function normalizeMeshState(value: Partial<MeshState> | null | undefined)
     resources: Array.isArray(value.resources) ? value.resources : [],
     zones: Array.isArray(value.zones) ? value.zones : [],
     peerSnapshots: Array.isArray(value.peerSnapshots) ? value.peerSnapshots : [],
+    pairingAudits: Array.isArray(value.pairingAudits) ? value.pairingAudits : [],
     lowBandwidth: Boolean(value.lowBandwidth),
     updatedAt: value.updatedAt || Date.now(),
   };
@@ -209,6 +236,14 @@ export function buildArchiveDiff(local: MeshState, imported: MeshState): Archive
   ];
 }
 
+export function createArchiveRecordSelection(diffs: ArchiveDiffRecord[]): ArchiveRecordSelection {
+  return {
+    messages: diffs.filter(diff => diff.category === "ALERT").map(diff => diff.id),
+    resources: diffs.filter(diff => diff.category === "RESOURCE").map(diff => diff.id),
+    zones: diffs.filter(diff => diff.category === "ZONE").map(diff => diff.id),
+  };
+}
+
 function mergeByNewest<T extends { id: string }>(local: T[], imported: T[], getTimestamp: (item: T) => number): T[] {
   const byId = new Map(local.map(item => [item.id, item]));
   imported.forEach(item => {
@@ -224,6 +259,16 @@ export function mergeArchiveState(local: MeshState, imported: MeshState): MeshSt
     messages: mergeByNewest(local.messages, imported.messages, item => item.createdAt),
     resources: mergeByNewest(local.resources, imported.resources, item => item.updatedAt),
     zones: mergeByNewest(local.zones, imported.zones, item => item.updatedAt),
+    updatedAt: Date.now(),
+  };
+}
+
+export function mergeSelectedArchiveRecords(local: MeshState, imported: MeshState, selection: ArchiveRecordSelection): MeshState {
+  return {
+    ...local,
+    messages: mergeByNewest(local.messages, imported.messages.filter(item => selection.messages.includes(item.id)), item => item.createdAt),
+    resources: mergeByNewest(local.resources, imported.resources.filter(item => selection.resources.includes(item.id)), item => item.updatedAt),
+    zones: mergeByNewest(local.zones, imported.zones.filter(item => selection.zones.includes(item.id)), item => item.updatedAt),
     updatedAt: Date.now(),
   };
 }
