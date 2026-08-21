@@ -1,0 +1,22 @@
+# Project TODO
+
+- [x] Replace the starter screen with a client-only tactical mesh command dashboard.
+- [x] Implement durable browser-local state with IndexedDB for identity, peer snapshots, alerts, and resources.
+- [x] Implement simulated browser-tab peer discovery and WebRTC data-channel transport with a deterministic fallback.
+- [x] Implement store-and-forward gossip routing with delivery state, hop counts, latency, and packet-drop simulation.
+- [x] Add node identity management for callsign, node ID, and operational status.
+- [x] Add an emergency broadcast board with priority levels, composition, receipt, and propagation telemetry.
+- [x] Add a shared resource allocation board for supplies, personnel, and equipment state.
+- [x] Add a live tactical topology graph with peers, connection links, latency, and packet-drop indicators.
+- [x] Add a low-bandwidth mode that compactly encodes mesh packets and visibly slows dashboard refresh cadence.
+- [x] Add password-based encrypted JSON state export using browser Web Crypto and a single downloadable archive.
+- [x] Apply the ruggedized high-contrast orange-and-charcoal visual system with a military-spec grid layout.
+- [x] Add unit tests for packet encoding, mesh routing, export encryption, and state normalization.
+- [x] Verify desktop and mobile layouts, browser-local persistence, and core dashboard workflows.
+- [x] Add IndexedDB round-trip coverage for local mesh persistence across simulated reloads.
+- [x] Perform a final in-browser dashboard verification pass for the operational controls and output states.
+- [x] Finalize the tactical document head and validate that the dashboard replaces the starter page.
+- [x] Persist discovered peer snapshots with the local mesh state.
+- [x] Add unit coverage for runtime gossip and fallback transport behavior.
+- [x] Respond to newly discovered peer advertisements for faster browser-tab discovery.
+- [x] Reflect queued alert delivery state when no direct mesh peer is available.
