@@ -379,7 +379,7 @@ export default function Home() {
                 <button className="tac-button w-full justify-center" onClick={exportArchive}><Download size={14} /> EXPORT ENCRYPTED JSON</button>
               </div>
             </TacticalPanel>
-            <ArchiveRecoveryPanel onImport={recovered => {
+            <ArchiveRecoveryPanel currentMesh={mesh} onImport={recovered => {
               meshRef.current = recovered;
               setMesh(recovered);
             }} />
@@ -413,6 +413,7 @@ export default function Home() {
               resources={mesh.resources}
               zones={mesh.zones}
               onAddZone={(zone: IncidentZone) => updateMesh(current => ({ ...current, zones: [zone, ...current.zones], updatedAt: Date.now() }))}
+              onUpdateZone={(zone: IncidentZone) => updateMesh(current => ({ ...current, zones: current.zones.map(item => item.id === zone.id ? zone : item), updatedAt: Date.now() }))}
               onRemoveZone={zoneId => updateMesh(current => ({ ...current, zones: current.zones.filter(zone => zone.id !== zoneId), updatedAt: Date.now() }))}
             />
 

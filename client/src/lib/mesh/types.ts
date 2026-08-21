@@ -85,6 +85,15 @@ export type MeshPacket = {
   payload: unknown;
 };
 
+export type ArchiveConflictSummary = {
+  overlappingMessages: number;
+  conflictingResources: number;
+  conflictingZones: number;
+  importedMessages: number;
+  importedResources: number;
+  importedZones: number;
+};
+
 export const createIdentity = (): NodeIdentity => {
   const nodeId = crypto.randomUUID().slice(0, 8).toUpperCase();
   return {
@@ -149,4 +158,39 @@ export function mergePacketIntoState(state: MeshState, packet: MeshPacket): Mesh
   }
 
   return state;
+}
+
+export function inspectArchiveConflict(local: MeshState, imported: MeshState): ArchiveConflictSummary {
+  const countOverlap = <T extends { id: string }>(first: T[], second: T[]) => {
+    const localIds = new Set(first.map(item => item.id));
+    return second.filter(item => localIds.has(item.id)).length;
+  };
+
+  return {
+    overlappingMessages: countOverlap(local.messages, imported.messages),
+    conflictingResources: countOverlap(local.resources, imported.resources),
+    conflictingZones: countOverlap(local.zones, imported.zones),
+    importedMessages: imported.messages.length,
+    importedResources: imported.resources.length,
+    importedZones: imported.zones.length,
+  };
+}
+
+function mergeByNewest<T extends { id: string }>(local: T[], imported: T[], getTimestamp: (item: T) => number): T[] {
+  const byId = new Map(local.map(item => [item.id, item]));
+  imported.forEach(item => {
+    const existing = byId.get(item.id);
+    if (!existing || getTimestamp(item) >= getTimestamp(existing)) byId.set(item.id, item);
+  });
+  return Array.from(byId.values()).sort((left, right) => getTimestamp(right) - getTimestamp(left));
+}
+
+export function mergeArchiveState(local: MeshState, imported: MeshState): MeshState {
+  return {
+    ...local,
+    messages: mergeByNewest(local.messages, imported.messages, item => item.createdAt),
+    resources: mergeByNewest(local.resources, imported.resources, item => item.updatedAt),
+    zones: mergeByNewest(local.zones, imported.zones, item => item.updatedAt),
+    updatedAt: Date.now(),
+  };
 }

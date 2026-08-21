@@ -30,3 +30,14 @@
 - [x] Document and test that manual pairing bundles gathered ICE candidates inside the exchanged offer and answer SDP payloads.
 - [x] Verify the archive import and key-rotation controls with a real downloaded archive in the live browser.
 - [x] Add direct automated coverage that manual answer payloads retain gathered ICE candidates.
+- [x] Add live camera QR scanning with explicit permission, scan, and stop controls for manual pairing payloads.
+- [x] Add archive recovery conflict review comparing local and imported records before state replacement.
+- [x] Add explicit archive resolution choices for replacing or merging local mesh state.
+- [x] Add direct incident-zone selection, drag repositioning, and resizing controls on the tactical map.
+- [x] Add automated coverage and browser verification for camera-QR controls, archive conflict resolution, and map zone editing.
+- [x] Add testable camera scan lifecycle helpers and cover permission failure, stop, and decoded-payload handling.
+- [x] Extract and test direct incident-zone selection, coordinate updates, and radius changes.
+- [x] Perform and document live review, merge-or-replace, camera-control, and map-edit workflow verification.
+- [x] Extract and test incident-zone selection editor-state transitions.
+- [x] Perform and document the live archive replace-resolution path.
+- [x] Document the sandbox camera limitation and retain automated start-stop coverage for camera-enabled browsers.

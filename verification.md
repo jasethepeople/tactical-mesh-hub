@@ -17,3 +17,9 @@ Manual pairing was verified by generating a WebRTC offer. The dashboard produced
 An encrypted archive was exported, selected back into the browser, validated as containing one alert and one resource, and decrypted with the original passphrase. The dashboard confirmed recovery into the browser-local mesh store.
 
 The staged archive was then re-encrypted with a replacement passphrase and downloaded as a replacement-key archive. Automated manual-pairing coverage confirms that the exchanged offer SDP retains gathered host ICE candidate lines for offline device handoff.
+
+The direct zone-editing workflow was verified in the live dashboard. Selecting `MEDICAL STAGING` populated its editable controls; updating its X coordinate from `50` to `67` and saving immediately moved the map overlay and changed the local zone roster to `67:50`.
+
+The current archive-review flow was verified against a freshly exported archive. It presented the alert, resource, and zone overlap counters before state changes, then completed the non-destructive merge path while retaining the local node identity. The live camera control was also exercised; in the sandbox without a usable camera, it returned the expected permission-or-device fallback message and preserved image and clipboard scan paths.
+
+The reviewed archive was exercised through the explicit `REPLACE` path as well. The dashboard confirmed that local mesh state was replaced with the recovered archive. The sandbox does not expose a camera device, so successful live camera start/stop remains environment-dependent; camera-enabled browsers use the same tested stream lifecycle and show a dedicated stop control after permission is granted.
