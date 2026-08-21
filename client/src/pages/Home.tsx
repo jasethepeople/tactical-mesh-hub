@@ -1,4 +1,7 @@
 import { encryptMeshState } from "@/lib/mesh/crypto";
+import { ArchiveRecoveryPanel } from "@/components/ArchiveRecoveryPanel";
+import { ManualPairingPanel } from "@/components/ManualPairingPanel";
+import { TacticalSituationMap } from "@/components/TacticalSituationMap";
 import { createPacket } from "@/lib/mesh/packet";
 import { MeshRuntime } from "@/lib/mesh/runtime";
 import { readMeshState, writeMeshState } from "@/lib/mesh/store";
@@ -6,6 +9,7 @@ import {
   mergePacketIntoState,
   type AlertPriority,
   type EmergencyMessage,
+  type IncidentZone,
   type MeshState,
   type OperationalStatus,
   type PeerSnapshot,
@@ -64,6 +68,10 @@ function relativeTime(timestamp: number): string {
   if (seconds < 60) return `${seconds || 1}s AGO`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}M AGO`;
   return `${Math.floor(seconds / 3600)}H AGO`;
+}
+
+function clampGrid(value: string): number {
+  return Math.max(0, Math.min(100, Number(value) || 0));
 }
 
 function pad(value: number): string {
@@ -158,6 +166,8 @@ export default function Home() {
   const [resourceUnit, setResourceUnit] = useState("UNITS");
   const [resourceCategory, setResourceCategory] = useState<ResourceCategory>("SUPPLIES");
   const [resourceStatus, setResourceStatus] = useState<ResourceStatus>("AVAILABLE");
+  const [resourceX, setResourceX] = useState("50");
+  const [resourceY, setResourceY] = useState("50");
 
   const updateMesh = useCallback((updater: (current: MeshState) => MeshState) => {
     setMesh(current => {
@@ -269,12 +279,15 @@ export default function Home() {
       quantity: Number(resourceQuantity),
       unit: resourceUnit.trim().toUpperCase() || "UNITS",
       status: resourceStatus,
+      coordinate: { x: clampGrid(resourceX), y: clampGrid(resourceY) },
       updatedAt: Date.now(),
     };
     updateMesh(current => ({ ...current, resources: [resource, ...current.resources.filter(item => item.id !== resource.id)], updatedAt: Date.now() }));
     runtimeRef.current?.publish("resource", resource);
     setResourceLabel("");
     setResourceQuantity("1");
+    setResourceX("50");
+    setResourceY("50");
     toast.success("Resource update queued for mesh propagation.");
   };
 
@@ -366,6 +379,11 @@ export default function Home() {
                 <button className="tac-button w-full justify-center" onClick={exportArchive}><Download size={14} /> EXPORT ENCRYPTED JSON</button>
               </div>
             </TacticalPanel>
+            <ArchiveRecoveryPanel onImport={recovered => {
+              meshRef.current = recovered;
+              setMesh(recovered);
+            }} />
+            <ManualPairingPanel getRuntime={() => runtimeRef.current} />
           </aside>
 
           <div className="space-y-3 min-w-0">
@@ -391,6 +409,13 @@ export default function Home() {
               </TacticalPanel>
             </div>
 
+            <TacticalSituationMap
+              resources={mesh.resources}
+              zones={mesh.zones}
+              onAddZone={(zone: IncidentZone) => updateMesh(current => ({ ...current, zones: [zone, ...current.zones], updatedAt: Date.now() }))}
+              onRemoveZone={zoneId => updateMesh(current => ({ ...current, zones: current.zones.filter(zone => zone.id !== zoneId), updatedAt: Date.now() }))}
+            />
+
             <div className="grid gap-3 2xl:grid-cols-[minmax(0,1.2fr)_minmax(370px,.8fr)]">
               <TacticalPanel title="EMERGENCY BROADCAST" label="GOSSIP ROUTED">
                 <div className="border-b border-orange-400/15 p-3">
@@ -412,6 +437,7 @@ export default function Home() {
                   <select className="tac-select" value={resourceStatus} onChange={event => setResourceStatus(event.target.value as ResourceStatus)}><option value="AVAILABLE">AVAILABLE</option><option value="ALLOCATED">ALLOCATED</option><option value="LOW">LOW</option><option value="UNAVAILABLE">UNAVAILABLE</option></select>
                   <div className="flex gap-2"><input className="tac-input min-w-0" type="number" min="1" value={resourceQuantity} onChange={event => setResourceQuantity(event.target.value)} /><input className="tac-input min-w-0" value={resourceUnit} onChange={event => setResourceUnit(event.target.value)} /></div>
                   <button className="tac-button justify-center" onClick={addResource}><ChevronRight size={14} /> POST UPDATE</button>
+                  <div className="col-span-2 flex gap-2"><input className="tac-input min-w-0" type="number" min="0" max="100" value={resourceX} onChange={event => setResourceX(event.target.value)} aria-label="Resource grid X coordinate" placeholder="GRID X" /><input className="tac-input min-w-0" type="number" min="0" max="100" value={resourceY} onChange={event => setResourceY(event.target.value)} aria-label="Resource grid Y coordinate" placeholder="GRID Y" /></div>
                 </div>
                 <div className="max-h-[280px] overflow-auto">
                   {mesh.resources.length ? mesh.resources.map(resource => <ResourceRow key={resource.id} resource={resource} />) : <EmptyState icon={<Archive size={25} />} text="No resources tracked. Post a local record to share it with connected peers." />}
@@ -458,7 +484,7 @@ function MessageRow({ message }: { message: EmergencyMessage }) {
 }
 
 function ResourceRow({ resource }: { resource: ResourceEntry }) {
-  return <article className="border-b border-orange-400/10 px-3 py-2.5 last:border-b-0"><div className="flex items-center gap-3"><span className="grid h-7 w-7 place-items-center border border-orange-400/20 text-orange-300"><Box size={13} /></span><div className="min-w-0 flex-1"><p className="truncate text-[11px] tracking-[.1em] text-slate-100">{resource.label}</p><p className="mt-1 text-[9px] tracking-[.1em] text-slate-500">{resource.category} // UPDATED {relativeTime(resource.updatedAt)}</p></div><div className="text-right"><p className="text-[12px] tracking-[.12em] text-orange-200">{resource.quantity} {resource.unit}</p><p className={`mt-1 text-[9px] tracking-[.1em] ${resourceStyle[resource.status]}`}>{resource.status}</p></div></div></article>;
+  return <article className="border-b border-orange-400/10 px-3 py-2.5 last:border-b-0"><div className="flex items-center gap-3"><span className="grid h-7 w-7 place-items-center border border-orange-400/20 text-orange-300"><Box size={13} /></span><div className="min-w-0 flex-1"><p className="truncate text-[11px] tracking-[.1em] text-slate-100">{resource.label}</p><p className="mt-1 text-[9px] tracking-[.1em] text-slate-500">{resource.category} // {resource.coordinate ? `GRID ${resource.coordinate.x}:${resource.coordinate.y}` : "NO GRID"} // UPDATED {relativeTime(resource.updatedAt)}</p></div><div className="text-right"><p className="text-[12px] tracking-[.12em] text-orange-200">{resource.quantity} {resource.unit}</p><p className={`mt-1 text-[9px] tracking-[.1em] ${resourceStyle[resource.status]}`}>{resource.status}</p></div></div></article>;
 }
 
 function EmptyState({ icon, text }: { icon: React.ReactNode; text: string }) {

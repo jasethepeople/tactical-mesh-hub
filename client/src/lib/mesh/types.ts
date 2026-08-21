@@ -2,6 +2,21 @@ export type OperationalStatus = "ONLINE" | "MOBILE" | "DEGRADED" | "SILENT";
 export type AlertPriority = "CRITICAL" | "HIGH" | "ROUTINE";
 export type ResourceCategory = "SUPPLIES" | "PERSONNEL" | "EQUIPMENT";
 export type ResourceStatus = "AVAILABLE" | "ALLOCATED" | "LOW" | "UNAVAILABLE";
+export type IncidentZoneType = "HAZARD" | "STAGING" | "SEARCH" | "RESTRICTED";
+
+export type TacticalCoordinate = {
+  x: number;
+  y: number;
+};
+
+export type IncidentZone = {
+  id: string;
+  label: string;
+  type: IncidentZoneType;
+  coordinate: TacticalCoordinate;
+  radius: number;
+  updatedAt: number;
+};
 
 export type NodeIdentity = {
   nodeId: string;
@@ -30,6 +45,7 @@ export type ResourceEntry = {
   quantity: number;
   unit: string;
   status: ResourceStatus;
+  coordinate?: TacticalCoordinate;
   updatedAt: number;
 };
 
@@ -51,6 +67,7 @@ export type MeshState = {
   identity: NodeIdentity;
   messages: EmergencyMessage[];
   resources: ResourceEntry[];
+  zones: IncidentZone[];
   peerSnapshots: PeerSnapshot[];
   lowBandwidth: boolean;
   updatedAt: number;
@@ -83,6 +100,7 @@ export const createEmptyMeshState = (): MeshState => ({
   identity: createIdentity(),
   messages: [],
   resources: [],
+  zones: [],
   peerSnapshots: [],
   lowBandwidth: false,
   updatedAt: Date.now(),
@@ -102,6 +120,7 @@ export function normalizeMeshState(value: Partial<MeshState> | null | undefined)
     },
     messages: Array.isArray(value.messages) ? value.messages : [],
     resources: Array.isArray(value.resources) ? value.resources : [],
+    zones: Array.isArray(value.zones) ? value.zones : [],
     peerSnapshots: Array.isArray(value.peerSnapshots) ? value.peerSnapshots : [],
     lowBandwidth: Boolean(value.lowBandwidth),
     updatedAt: value.updatedAt || Date.now(),

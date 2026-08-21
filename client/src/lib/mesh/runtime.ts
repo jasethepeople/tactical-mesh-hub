@@ -10,6 +10,15 @@ type SignalingMessage =
 
 type PeerRecord = PeerSnapshot & { channel?: RTCDataChannel; connection?: RTCPeerConnection; pendingPings: Map<string, number> };
 
+export type ManualSignalEnvelope = {
+  protocol: "TAC-MESH-SIGNAL/1";
+  sessionId: string;
+  type: "offer" | "answer";
+  from: NodeIdentity;
+  sdp: RTCSessionDescriptionInit;
+  createdAt: number;
+};
+
 type MeshRuntimeOptions = {
   identity: NodeIdentity;
   onPacket: (packet: MeshPacket) => void;
@@ -20,6 +29,19 @@ type MeshRuntimeOptions = {
 
 const CHANNEL_NAME = "tactical-mesh-signal-v1";
 
+export function parseManualSignal(raw: string): ManualSignalEnvelope {
+  try {
+    const candidate = JSON.parse(raw) as Partial<ManualSignalEnvelope>;
+    if (candidate.protocol !== "TAC-MESH-SIGNAL/1" || !candidate.sessionId || !candidate.from?.nodeId || !candidate.sdp || (candidate.type !== "offer" && candidate.type !== "answer")) {
+      throw new Error("Unsupported pairing payload.");
+    }
+    return candidate as ManualSignalEnvelope;
+  } catch (error) {
+    if (error instanceof Error && error.message === "Unsupported pairing payload.") throw error;
+    throw new Error("The pairing payload is not valid Tactical Mesh signaling data.");
+  }
+}
+
 export class MeshRuntime {
   private readonly options: MeshRuntimeOptions;
   private channel: BroadcastChannel | null = null;
@@ -28,6 +50,7 @@ export class MeshRuntime {
   private seen = new Set<string>();
   private forwardQueue: MeshPacket[] = [];
   private timers: number[] = [];
+  private manualPairings = new Map<string, { remoteId: string; connection: RTCPeerConnection }>();
 
   constructor(options: MeshRuntimeOptions) {
     this.options = options;
@@ -53,6 +76,7 @@ export class MeshRuntime {
       peer.connection?.close();
     });
     this.peers.clear();
+    this.manualPairings.clear();
     this.channel?.close();
     this.channel = null;
   }
@@ -66,6 +90,40 @@ export class MeshRuntime {
     const packet = createPacket(kind, this.identity.nodeId, payload);
     this.seen.add(packet.id);
     this.forward(packet);
+  }
+
+  async createManualOffer(): Promise<string> {
+    if (typeof RTCPeerConnection === "undefined") throw new Error("This browser does not support WebRTC manual pairing.");
+    const sessionId = crypto.randomUUID();
+    const remoteId = `MANUAL-${sessionId.slice(0, 8)}`;
+    const connection = this.buildConnection(remoteId, sessionId);
+    this.manualPairings.set(sessionId, { remoteId, connection });
+    this.bindDataChannel(remoteId, connection.createDataChannel("mesh-ops"));
+    const sdp = await this.createCompleteDescription(connection, "offer");
+    return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId, type: "offer", from: this.identity, sdp, createdAt: Date.now() } satisfies ManualSignalEnvelope);
+  }
+
+  async acceptManualSignal(raw: string): Promise<string | null> {
+    if (typeof RTCPeerConnection === "undefined") throw new Error("This browser does not support WebRTC manual pairing.");
+    const signal = parseManualSignal(raw);
+    if (signal.from.nodeId === this.identity.nodeId) throw new Error("A node cannot pair with its own signaling payload.");
+    if (signal.type === "offer") {
+      const remoteId = signal.from.nodeId;
+      const connection = this.buildConnection(remoteId, signal.sessionId);
+      this.manualPairings.set(signal.sessionId, { remoteId, connection });
+      this.touchPeer(remoteId, signal.from);
+      await connection.setRemoteDescription(signal.sdp);
+      const sdp = await this.createCompleteDescription(connection, "answer");
+      return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId: signal.sessionId, type: "answer", from: this.identity, sdp, createdAt: Date.now() } satisfies ManualSignalEnvelope);
+    }
+    const pairing = this.manualPairings.get(signal.sessionId);
+    if (!pairing) throw new Error("No pending manual pairing session matches this answer.");
+    const peer = this.touchPeer(pairing.remoteId, signal.from);
+    peer.callsign = signal.from.callsign;
+    peer.status = signal.from.status;
+    await pairing.connection.setRemoteDescription(signal.sdp);
+    this.emitPeers();
+    return null;
   }
 
   private announce(): void {
@@ -141,12 +199,12 @@ export class MeshRuntime {
     }
   }
 
-  private buildConnection(remoteId: string): RTCPeerConnection {
+  private buildConnection(remoteId: string, manualSessionId?: string): RTCPeerConnection {
     const peer = this.touchPeer(remoteId);
     const connection = new RTCPeerConnection({ iceServers: [] });
     peer.connection = connection;
     connection.onicecandidate = event => {
-      if (event.candidate) {
+      if (event.candidate && !manualSessionId) {
         this.channel?.postMessage({ kind: "candidate", source: this.identity.nodeId, target: remoteId, candidate: event.candidate.toJSON() } satisfies SignalingMessage);
       }
     };
@@ -157,6 +215,30 @@ export class MeshRuntime {
     };
     connection.ondatachannel = event => this.bindDataChannel(remoteId, event.channel);
     return connection;
+  }
+
+  private async createCompleteDescription(connection: RTCPeerConnection, type: "offer" | "answer"): Promise<RTCSessionDescriptionInit> {
+    const description = type === "offer" ? await connection.createOffer() : await connection.createAnswer();
+    await connection.setLocalDescription(description);
+    await this.waitForIceGathering(connection);
+    if (!connection.localDescription) throw new Error("Manual pairing could not create a local session description.");
+    return connection.localDescription.toJSON();
+  }
+
+  private waitForIceGathering(connection: RTCPeerConnection): Promise<void> {
+    if (connection.iceGatheringState === "complete") return Promise.resolve();
+    return new Promise(resolve => {
+      const finish = () => {
+        connection.removeEventListener("icegatheringstatechange", listener);
+        window.clearTimeout(timeout);
+        resolve();
+      };
+      const listener = () => {
+        if (connection.iceGatheringState === "complete") finish();
+      };
+      const timeout = window.setTimeout(finish, 2500);
+      connection.addEventListener("icegatheringstatechange", listener);
+    });
   }
 
   private async createOffer(remoteId: string, identity: NodeIdentity): Promise<void> {

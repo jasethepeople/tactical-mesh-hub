@@ -20,3 +20,13 @@
 - [x] Add unit coverage for runtime gossip and fallback transport behavior.
 - [x] Respond to newly discovered peer advertisements for faster browser-tab discovery.
 - [x] Reflect queued alert delivery state when no direct mesh peer is available.
+- [x] Add encrypted archive decryption, validation, and local import recovery.
+- [x] Add an archive key-rotation workflow that decrypts and re-encrypts local mesh state with a replacement passphrase.
+- [x] Extend resource records with tactical coordinates and add editable incident zones.
+- [x] Add a tactical map panel that visually plots resources and incident zones without cloud map dependencies.
+- [x] Add manual clipboard signaling exchange for cross-device WebRTC offer, answer, and ICE-candidate handoff.
+- [x] Add QR encoding and scanning support for manual peer-pairing payloads.
+- [x] Add automated coverage and browser verification for archive recovery, key rotation, map overlays, and manual pairing flows.
+- [x] Document and test that manual pairing bundles gathered ICE candidates inside the exchanged offer and answer SDP payloads.
+- [x] Verify the archive import and key-rotation controls with a real downloaded archive in the live browser.
+- [x] Add direct automated coverage that manual answer payloads retain gathered ICE candidates.

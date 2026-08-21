@@ -76,6 +76,10 @@
   .tac-select { appearance: auto; }
   .tac-select option { background: #151a15; color: #e7eee7; }
   .tac-readout { border-left: 2px solid #ff8e25; background: #101510; padding: .65rem .7rem; color: #ffd7a7; font-size: 11px; letter-spacing: .13em; }
+  .tac-file-input { display: flex; min-height: 38px; align-items: center; gap: .5rem; overflow: hidden; border: 1px dashed rgba(255,142,37,.38); background: #101510; padding: 0 .65rem; color: #e9be89; font-size: 9px; letter-spacing: .1em; }
+  .tac-file-input input { position: absolute; height: 1px; width: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+  .tac-textarea { width: 100%; resize: vertical; border: 1px solid rgba(255,142,37,.22); background: #0e130e; padding: .55rem .65rem; color: #dce4dc; font-size: 9px; line-height: 1.45; letter-spacing: .04em; outline: none; }
+  .tac-textarea:focus { border-color: #ff8e25; }
   .tac-button { display: inline-flex; min-height: 38px; align-items: center; gap: .45rem; border: 1px solid #ff8e25; background: #ff8e25; padding: 0 .75rem; color: #111411; font-size: 10px; font-weight: 600; letter-spacing: .1em; transition: transform .13s cubic-bezier(.23,1,.32,1), background .13s ease-out; }
   .tac-button:hover { background: #ffae5a; }
   .tac-button:active { transform: scale(.97); }
