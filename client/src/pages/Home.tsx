@@ -5,6 +5,7 @@ import { TacticalSituationMap } from "@/components/TacticalSituationMap";
 import { createPacket } from "@/lib/mesh/packet";
 import { MeshRuntime } from "@/lib/mesh/runtime";
 import { readMeshState, writeMeshState } from "@/lib/mesh/store";
+import { pushZoneHistory, takeZoneUndo } from "@/lib/mesh/zoneHistory";
 import {
   mergePacketIntoState,
   type AlertPriority,
@@ -168,6 +169,8 @@ export default function Home() {
   const [resourceStatus, setResourceStatus] = useState<ResourceStatus>("AVAILABLE");
   const [resourceX, setResourceX] = useState("50");
   const [resourceY, setResourceY] = useState("50");
+  const zoneHistoryRef = useRef<IncidentZone[][]>([]);
+  const [zoneUndoDepth, setZoneUndoDepth] = useState(0);
 
   const updateMesh = useCallback((updater: (current: MeshState) => MeshState) => {
     setMesh(current => {
@@ -177,6 +180,35 @@ export default function Home() {
       return next;
     });
   }, []);
+
+  const rememberZones = useCallback((zones: IncidentZone[]) => {
+    zoneHistoryRef.current = pushZoneHistory(zoneHistoryRef.current, zones);
+    setZoneUndoDepth(zoneHistoryRef.current.length);
+  }, []);
+
+  const commitZoneChange = useCallback((mutator: (zones: IncidentZone[]) => IncidentZone[]) => {
+    const snapshot = meshRef.current?.zones;
+    if (snapshot) rememberZones(snapshot);
+    updateMesh(current => ({ ...current, zones: mutator(current.zones), updatedAt: Date.now() }));
+  }, [rememberZones, updateMesh]);
+
+  const previewZoneChange = useCallback((zone: IncidentZone) => {
+    updateMesh(current => ({ ...current, zones: current.zones.map(item => item.id === zone.id ? zone : item), updatedAt: Date.now() }));
+  }, [updateMesh]);
+
+  const beginZoneGesture = useCallback(() => {
+    const snapshot = meshRef.current?.zones;
+    if (snapshot) rememberZones(snapshot);
+  }, [rememberZones]);
+
+  const undoZoneChange = useCallback(() => {
+    const undo = takeZoneUndo(zoneHistoryRef.current);
+    if (!undo.snapshot) return;
+    zoneHistoryRef.current = undo.history;
+    setZoneUndoDepth(zoneHistoryRef.current.length);
+    updateMesh(current => ({ ...current, zones: undo.snapshot ?? current.zones, updatedAt: Date.now() }));
+    toast.success("Last incident-zone change reverted locally.");
+  }, [updateMesh]);
 
   useEffect(() => {
     let active = true;
@@ -412,9 +444,13 @@ export default function Home() {
             <TacticalSituationMap
               resources={mesh.resources}
               zones={mesh.zones}
-              onAddZone={(zone: IncidentZone) => updateMesh(current => ({ ...current, zones: [zone, ...current.zones], updatedAt: Date.now() }))}
-              onUpdateZone={(zone: IncidentZone) => updateMesh(current => ({ ...current, zones: current.zones.map(item => item.id === zone.id ? zone : item), updatedAt: Date.now() }))}
-              onRemoveZone={zoneId => updateMesh(current => ({ ...current, zones: current.zones.filter(zone => zone.id !== zoneId), updatedAt: Date.now() }))}
+              onAddZone={zone => commitZoneChange(zones => [zone, ...zones])}
+              onUpdateZone={zone => commitZoneChange(zones => zones.map(item => item.id === zone.id ? zone : item))}
+              onPreviewZone={previewZoneChange}
+              onBeginZoneGesture={beginZoneGesture}
+              onRemoveZone={zoneId => commitZoneChange(zones => zones.filter(zone => zone.id !== zoneId))}
+              onUndo={undoZoneChange}
+              undoDepth={zoneUndoDepth}
             />
 
             <div className="grid gap-3 2xl:grid-cols-[minmax(0,1.2fr)_minmax(370px,.8fr)]">

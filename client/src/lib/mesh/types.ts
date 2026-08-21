@@ -94,6 +94,16 @@ export type ArchiveConflictSummary = {
   importedZones: number;
 };
 
+export type ArchiveDiffKind = "NEW" | "CHANGED" | "UNCHANGED";
+export type ArchiveDiffRecord = {
+  category: "ALERT" | "RESOURCE" | "ZONE";
+  id: string;
+  label: string;
+  status: ArchiveDiffKind;
+  localTimestamp?: number;
+  archiveTimestamp: number;
+};
+
 export const createIdentity = (): NodeIdentity => {
   const nodeId = crypto.randomUUID().slice(0, 8).toUpperCase();
   return {
@@ -174,6 +184,29 @@ export function inspectArchiveConflict(local: MeshState, imported: MeshState): A
     importedResources: imported.resources.length,
     importedZones: imported.zones.length,
   };
+}
+
+function describeArchiveRecords<T extends { id: string }>(category: ArchiveDiffRecord["category"], local: T[], imported: T[], getLabel: (item: T) => string, getTimestamp: (item: T) => number): ArchiveDiffRecord[] {
+  const localById = new Map(local.map(item => [item.id, item]));
+  return imported.map(item => {
+    const existing = localById.get(item.id);
+    return {
+      category,
+      id: item.id,
+      label: getLabel(item),
+      status: !existing ? "NEW" : JSON.stringify(existing) === JSON.stringify(item) ? "UNCHANGED" : "CHANGED",
+      localTimestamp: existing ? getTimestamp(existing) : undefined,
+      archiveTimestamp: getTimestamp(item),
+    };
+  });
+}
+
+export function buildArchiveDiff(local: MeshState, imported: MeshState): ArchiveDiffRecord[] {
+  return [
+    ...describeArchiveRecords("ALERT", local.messages, imported.messages, item => `${item.priority} // ${item.body.slice(0, 36)}`, item => item.createdAt),
+    ...describeArchiveRecords("RESOURCE", local.resources, imported.resources, item => `${item.label} // ${item.quantity} ${item.unit}`, item => item.updatedAt),
+    ...describeArchiveRecords("ZONE", local.zones, imported.zones, item => `${item.label} // ${item.coordinate.x}:${item.coordinate.y} // R${item.radius}`, item => item.updatedAt),
+  ];
 }
 
 function mergeByNewest<T extends { id: string }>(local: T[], imported: T[], getTimestamp: (item: T) => number): T[] {

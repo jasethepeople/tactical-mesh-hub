@@ -41,3 +41,9 @@
 - [x] Extract and test incident-zone selection editor-state transitions.
 - [x] Perform and document the live archive replace-resolution path.
 - [x] Document the sandbox camera limitation and retain automated start-stop coverage for camera-enabled browsers.
+- [x] Add record-level local-versus-archive diff details to the recovery review workflow.
+- [x] Add incident-zone change history with one-step undo for create, edit, reposition, and removal actions.
+- [x] Add a deterministic short confirmation code to manual offer and answer pairing envelopes.
+- [x] Add pairing status feedback that instructs operators to compare confirmation codes before processing the final answer.
+- [x] Add automated coverage and browser verification for archive diffs, zone undo, and pairing-code workflows.
+- [x] Verify record-level NEW, CHANGED, and UNCHANGED archive diff rows render in the live recovery review before resolution.

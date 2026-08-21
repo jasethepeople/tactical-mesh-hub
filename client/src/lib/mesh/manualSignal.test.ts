@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MeshRuntime, parseManualSignal } from "./runtime";
+import { createPairingConfirmationCode, MeshRuntime, parseManualSignal } from "./runtime";
 
 describe("manual device-pairing payloads", () => {
   const validOffer = {
@@ -7,6 +7,7 @@ describe("manual device-pairing payloads", () => {
     sessionId: "session-1",
     type: "offer",
     from: { nodeId: "ALPHA001", callsign: "ALPHA", status: "ONLINE", updatedAt: 1 },
+    confirmationCode: createPairingConfirmationCode("session-1", "ALPHA001"),
     sdp: { type: "offer", sdp: "v=0\r\n" },
     createdAt: 1,
   };
@@ -16,6 +17,7 @@ describe("manual device-pairing payloads", () => {
       protocol: "TAC-MESH-SIGNAL/1",
       type: "offer",
       from: { nodeId: "ALPHA001" },
+      confirmationCode: validOffer.confirmationCode,
     });
   });
 
@@ -23,7 +25,13 @@ describe("manual device-pairing payloads", () => {
     expect(() => parseManualSignal(JSON.stringify({ protocol: "OTHER", type: "offer" }))).toThrow("Unsupported pairing payload");
   });
 
-  it("keeps gathered host ICE candidates in the manual offer SDP", async () => {
+  it("creates a stable six-character operator confirmation code and rejects malformed codes", () => {
+    expect(createPairingConfirmationCode("session-1", "ALPHA001")).toBe(validOffer.confirmationCode);
+    expect(validOffer.confirmationCode).toMatch(/^[A-Z0-9]{6}$/);
+    expect(() => parseManualSignal(JSON.stringify({ ...validOffer, confirmationCode: "bad" }))).toThrow("Unsupported pairing payload");
+  });
+
+  it("keeps gathered host ICE candidates and confirmation codes in offer and answer payloads", async () => {
     class StubConnection {
       iceGatheringState: RTCIceGatheringState = "complete";
       localDescription: RTCSessionDescription | null = null;
@@ -42,22 +50,15 @@ describe("manual device-pairing payloads", () => {
 
     const original = globalThis.RTCPeerConnection;
     Object.defineProperty(globalThis, "RTCPeerConnection", { value: StubConnection, configurable: true });
-    const runtime = new MeshRuntime({
-      identity: validOffer.from,
-      lowBandwidth: () => false,
-      getSnapshotPackets: () => [],
-      onPacket: () => undefined,
-      onPeers: () => undefined,
-    });
+    const runtime = new MeshRuntime({ identity: validOffer.from, lowBandwidth: () => false, getSnapshotPackets: () => [], onPacket: () => undefined, onPeers: () => undefined });
     const offer = parseManualSignal(await runtime.createManualOffer());
     expect(offer.sdp.sdp).toContain("a=candidate:");
-    const response = await runtime.acceptManualSignal(JSON.stringify({
-      ...validOffer,
-      sessionId: "remote-offer-1",
-      from: { nodeId: "BRAVO001", callsign: "BRAVO", status: "ONLINE", updatedAt: 1 },
-    }));
-    expect(response).not.toBeNull();
-    expect(parseManualSignal(response as string).sdp.sdp).toContain("a=candidate:");
+    expect(offer.confirmationCode).toBe(createPairingConfirmationCode(offer.sessionId, "ALPHA001"));
+    const remoteOffer = { ...validOffer, sessionId: "remote-offer-1", from: { nodeId: "BRAVO001", callsign: "BRAVO", status: "ONLINE" as const, updatedAt: 1 }, confirmationCode: createPairingConfirmationCode("remote-offer-1", "BRAVO001") };
+    const response = await runtime.acceptManualSignal(JSON.stringify(remoteOffer));
+    const answer = parseManualSignal(response as string);
+    expect(answer.sdp.sdp).toContain("a=candidate:");
+    expect(answer.confirmationCode).toBe(remoteOffer.confirmationCode);
     Object.defineProperty(globalThis, "RTCPeerConnection", { value: original, configurable: true });
   });
 });

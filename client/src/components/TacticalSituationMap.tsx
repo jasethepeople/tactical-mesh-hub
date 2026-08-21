@@ -1,16 +1,20 @@
 import type { IncidentZone, IncidentZoneType, ResourceEntry } from "@/lib/mesh/types";
 import { coordinateFromPointer, createIncidentZone, selectZoneForEditing, updateIncidentZone } from "@/lib/mesh/zoneEditor";
-import { Crosshair, Edit3, MapPinned, Minus, Move, Plus, RadioTower, Save, X } from "lucide-react";
+import { Crosshair, Edit3, MapPinned, Minus, Move, Plus, RadioTower, Save, Undo2, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 const zoneColors: Record<IncidentZoneType, string> = { HAZARD: "#ef5b5b", STAGING: "#39d98a", SEARCH: "#f2bd4f", RESTRICTED: "#a998ff" };
 
-export function TacticalSituationMap({ resources, zones, onAddZone, onUpdateZone, onRemoveZone }: {
+export function TacticalSituationMap({ resources, zones, onAddZone, onUpdateZone, onPreviewZone, onBeginZoneGesture, onRemoveZone, onUndo, undoDepth }: {
   resources: ResourceEntry[];
   zones: IncidentZone[];
   onAddZone: (zone: IncidentZone) => void;
   onUpdateZone: (zone: IncidentZone) => void;
+  onPreviewZone: (zone: IncidentZone) => void;
+  onBeginZoneGesture: () => void;
   onRemoveZone: (zoneId: string) => void;
+  onUndo: () => void;
+  undoDepth: number;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [label, setLabel] = useState("");
@@ -56,7 +60,7 @@ export function TacticalSituationMap({ resources, zones, onAddZone, onUpdateZone
     const zone = zones.find(item => item.id === draggingId);
     if (!zone) return;
     const coordinate = coordinateFromPointer(event.clientX, event.clientY, svgRef.current.getBoundingClientRect());
-    onUpdateZone(updateIncidentZone(zone, { coordinate }));
+    onPreviewZone(updateIncidentZone(zone, { coordinate }));
     setX(String(coordinate.x));
     setY(String(coordinate.y));
   };
@@ -70,11 +74,12 @@ export function TacticalSituationMap({ resources, zones, onAddZone, onUpdateZone
             <defs><pattern id="situation-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(255,142,37,.16)" strokeWidth=".28" /></pattern><pattern id="situation-fine" width="2" height="2" patternUnits="userSpaceOnUse"><path d="M 2 0 L 0 0 0 2" fill="none" stroke="rgba(255,142,37,.035)" strokeWidth=".1" /></pattern></defs>
             <rect width="100" height="100" fill="url(#situation-fine)" /><rect width="100" height="100" fill="url(#situation-grid)" />
             {[20, 40, 60, 80].map(value => <g key={value}><text x={value} y="4" textAnchor="middle" fill="#7d887d" fontSize="2.5" fontFamily="monospace">{value}</text><text x="2" y={value} fill="#7d887d" fontSize="2.5" fontFamily="monospace">{value}</text></g>)}
-            {zones.map(zone => <g key={zone.id} className="cursor-move" onPointerDown={event => { event.stopPropagation(); selectZone(zone); setDraggingId(zone.id); }}><circle cx={zone.coordinate.x} cy={zone.coordinate.y} r={zone.radius} fill={zoneColors[zone.type]} fillOpacity={selectedId === zone.id ? ".21" : ".12"} stroke={zoneColors[zone.type]} strokeOpacity=".9" strokeWidth={selectedId === zone.id ? "1" : ".5"} strokeDasharray="1.4 1" /><circle cx={zone.coordinate.x} cy={zone.coordinate.y} r="1.3" fill={zoneColors[zone.type]} /><text x={zone.coordinate.x} y={zone.coordinate.y - zone.radius - 2} textAnchor="middle" fill={zoneColors[zone.type]} fontSize="3" fontFamily="monospace">{zone.label.slice(0, 16)}</text></g>)}
+            {zones.map(zone => <g key={zone.id} className="cursor-move" onPointerDown={event => { event.stopPropagation(); selectZone(zone); onBeginZoneGesture(); setDraggingId(zone.id); }}><circle cx={zone.coordinate.x} cy={zone.coordinate.y} r={zone.radius} fill={zoneColors[zone.type]} fillOpacity={selectedId === zone.id ? ".21" : ".12"} stroke={zoneColors[zone.type]} strokeOpacity=".9" strokeWidth={selectedId === zone.id ? "1" : ".5"} strokeDasharray="1.4 1" /><circle cx={zone.coordinate.x} cy={zone.coordinate.y} r="1.3" fill={zoneColors[zone.type]} /><text x={zone.coordinate.x} y={zone.coordinate.y - zone.radius - 2} textAnchor="middle" fill={zoneColors[zone.type]} fontSize="3" fontFamily="monospace">{zone.label.slice(0, 16)}</text></g>)}
             {resources.filter(resource => resource.coordinate).map(resource => <g key={resource.id} pointerEvents="none"><circle cx={resource.coordinate?.x} cy={resource.coordinate?.y} r="2.7" fill="#131913" stroke="#ffb15e" strokeWidth=".65" /><path d={`M ${resource.coordinate?.x} ${Number(resource.coordinate?.y) - 1.5} v 3 M ${Number(resource.coordinate?.x) - 1.5} ${resource.coordinate?.y} h 3`} stroke="#ff8e25" strokeWidth=".55" /><text x={resource.coordinate?.x} y={Number(resource.coordinate?.y) + 5.5} textAnchor="middle" fill="#ffe0ba" fontSize="2.8" fontFamily="monospace">{resource.label.slice(0, 13)}</text></g>)}
             <g><circle cx="50" cy="50" r="3.8" fill="#ff8e25" opacity=".12" /><circle cx="50" cy="50" r="1.4" fill="#ff8e25" /><path d="M50 44 v12 M44 50 h12" stroke="#ff8e25" strokeWidth=".35" /></g>
           </svg>
           <div className="absolute left-3 top-3 flex items-center gap-2"><span className="tac-chip"><Crosshair size={10} /> INCIDENT OVERLAY</span><span className="tac-chip text-slate-400">{zones.length} ZONES</span></div>
+          <button className="tac-chip absolute right-3 top-3 disabled:opacity-40" disabled={!undoDepth} onClick={onUndo}><Undo2 size={10} /> UNDO {undoDepth ? `(${undoDepth})` : ""}</button>
           <div className="absolute bottom-3 left-3 flex items-center gap-1 text-[9px] tracking-[.11em] text-slate-500"><Move size={11} /> DRAG A ZONE TO REPOSITION // {resources.filter(resource => resource.coordinate).length} GEO-TAGGED ASSETS</div>
         </div>
         <div className="space-y-3">

@@ -15,6 +15,7 @@ export type ManualSignalEnvelope = {
   sessionId: string;
   type: "offer" | "answer";
   from: NodeIdentity;
+  confirmationCode: string;
   sdp: RTCSessionDescriptionInit;
   createdAt: number;
 };
@@ -32,7 +33,7 @@ const CHANNEL_NAME = "tactical-mesh-signal-v1";
 export function parseManualSignal(raw: string): ManualSignalEnvelope {
   try {
     const candidate = JSON.parse(raw) as Partial<ManualSignalEnvelope>;
-    if (candidate.protocol !== "TAC-MESH-SIGNAL/1" || !candidate.sessionId || !candidate.from?.nodeId || !candidate.sdp || (candidate.type !== "offer" && candidate.type !== "answer")) {
+    if (candidate.protocol !== "TAC-MESH-SIGNAL/1" || !candidate.sessionId || !candidate.from?.nodeId || !candidate.sdp || typeof candidate.confirmationCode !== "string" || !/^[A-Z0-9]{6}$/.test(candidate.confirmationCode) || (candidate.type !== "offer" && candidate.type !== "answer")) {
       throw new Error("Unsupported pairing payload.");
     }
     return candidate as ManualSignalEnvelope;
@@ -40,6 +41,15 @@ export function parseManualSignal(raw: string): ManualSignalEnvelope {
     if (error instanceof Error && error.message === "Unsupported pairing payload.") throw error;
     throw new Error("The pairing payload is not valid Tactical Mesh signaling data.");
   }
+}
+
+export function createPairingConfirmationCode(sessionId: string, initiatorNodeId: string): string {
+  let hash = 2166136261;
+  for (const character of `${sessionId}:${initiatorNodeId}`) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36).toUpperCase().padStart(6, "0").slice(-6);
 }
 
 export class MeshRuntime {
@@ -50,7 +60,7 @@ export class MeshRuntime {
   private seen = new Set<string>();
   private forwardQueue: MeshPacket[] = [];
   private timers: number[] = [];
-  private manualPairings = new Map<string, { remoteId: string; connection: RTCPeerConnection }>();
+  private manualPairings = new Map<string, { remoteId: string; connection: RTCPeerConnection; confirmationCode: string }>();
 
   constructor(options: MeshRuntimeOptions) {
     this.options = options;
@@ -96,11 +106,12 @@ export class MeshRuntime {
     if (typeof RTCPeerConnection === "undefined") throw new Error("This browser does not support WebRTC manual pairing.");
     const sessionId = crypto.randomUUID();
     const remoteId = `MANUAL-${sessionId.slice(0, 8)}`;
+    const confirmationCode = createPairingConfirmationCode(sessionId, this.identity.nodeId);
     const connection = this.buildConnection(remoteId, sessionId);
-    this.manualPairings.set(sessionId, { remoteId, connection });
+    this.manualPairings.set(sessionId, { remoteId, connection, confirmationCode });
     this.bindDataChannel(remoteId, connection.createDataChannel("mesh-ops"));
     const sdp = await this.createCompleteDescription(connection, "offer");
-    return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId, type: "offer", from: this.identity, sdp, createdAt: Date.now() } satisfies ManualSignalEnvelope);
+    return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId, type: "offer", from: this.identity, confirmationCode, sdp, createdAt: Date.now() } satisfies ManualSignalEnvelope);
   }
 
   async acceptManualSignal(raw: string): Promise<string | null> {
@@ -108,16 +119,19 @@ export class MeshRuntime {
     const signal = parseManualSignal(raw);
     if (signal.from.nodeId === this.identity.nodeId) throw new Error("A node cannot pair with its own signaling payload.");
     if (signal.type === "offer") {
+      const expectedCode = createPairingConfirmationCode(signal.sessionId, signal.from.nodeId);
+      if (signal.confirmationCode !== expectedCode) throw new Error("Pairing confirmation code does not match the offer envelope.");
       const remoteId = signal.from.nodeId;
       const connection = this.buildConnection(remoteId, signal.sessionId);
-      this.manualPairings.set(signal.sessionId, { remoteId, connection });
+      this.manualPairings.set(signal.sessionId, { remoteId, connection, confirmationCode: signal.confirmationCode });
       this.touchPeer(remoteId, signal.from);
       await connection.setRemoteDescription(signal.sdp);
       const sdp = await this.createCompleteDescription(connection, "answer");
-      return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId: signal.sessionId, type: "answer", from: this.identity, sdp, createdAt: Date.now() } satisfies ManualSignalEnvelope);
+      return JSON.stringify({ protocol: "TAC-MESH-SIGNAL/1", sessionId: signal.sessionId, type: "answer", from: this.identity, confirmationCode: signal.confirmationCode, sdp, createdAt: Date.now() } satisfies ManualSignalEnvelope);
     }
     const pairing = this.manualPairings.get(signal.sessionId);
     if (!pairing) throw new Error("No pending manual pairing session matches this answer.");
+    if (signal.confirmationCode !== pairing.confirmationCode) throw new Error("Pairing confirmation code does not match this pending session.");
     const peer = this.touchPeer(pairing.remoteId, signal.from);
     peer.callsign = signal.from.callsign;
     peer.status = signal.from.status;

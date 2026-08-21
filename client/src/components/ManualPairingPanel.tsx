@@ -1,4 +1,4 @@
-import type { MeshRuntime } from "@/lib/mesh/runtime";
+import { parseManualSignal, type MeshRuntime } from "@/lib/mesh/runtime";
 import { decodeQrFrame, requestCameraStream, stopCameraStream } from "@/lib/mesh/qrScan";
 import jsQR from "jsqr";
 import QRCode from "qrcode";
@@ -16,6 +16,7 @@ export function ManualPairingPanel({ getRuntime }: { getRuntime: () => MeshRunti
   const [inbound, setInbound] = useState("");
   const [mode, setMode] = useState<"OFFER" | "ANSWER" | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
+  const [confirmationCode, setConfirmationCode] = useState("");
 
   useEffect(() => {
     if (!outbound || !canvasRef.current) return;
@@ -76,7 +77,9 @@ export function ManualPairingPanel({ getRuntime }: { getRuntime: () => MeshRunti
     const runtime = getRuntime();
     if (!runtime) return toast.error("Mesh runtime is still initializing.");
     try {
-      setOutbound(await runtime.createManualOffer());
+      const payload = await runtime.createManualOffer();
+      setOutbound(payload);
+      setConfirmationCode(parseManualSignal(payload).confirmationCode);
       setMode("OFFER");
       toast.success("Offer generated. Scan its QR code or copy the payload to the remote operator.");
     } catch (error) {
@@ -88,16 +91,19 @@ export function ManualPairingPanel({ getRuntime }: { getRuntime: () => MeshRunti
     const runtime = getRuntime();
     if (!runtime) return toast.error("Mesh runtime is still initializing.");
     try {
+      const inboundSignal = parseManualSignal(inbound.trim());
+      setConfirmationCode(inboundSignal.confirmationCode);
       const response = await runtime.acceptManualSignal(inbound.trim());
       setInbound("");
       if (response) {
         setOutbound(response);
+        setConfirmationCode(parseManualSignal(response).confirmationCode);
         setMode("ANSWER");
         toast.success("Answer generated. Return this QR code or clipboard payload to the offering device.");
       } else {
         setOutbound("");
         setMode(null);
-        toast.success("Answer accepted. Awaiting encrypted data-channel establishment.");
+        toast.success(`Code ${inboundSignal.confirmationCode} verified. Awaiting encrypted data-channel establishment.`);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Pairing payload could not be accepted.");
@@ -142,6 +148,7 @@ export function ManualPairingPanel({ getRuntime }: { getRuntime: () => MeshRunti
         <p className="text-[9px] leading-relaxed tracking-[.08em] text-slate-500">EXCHANGE A THREE-STEP OFFER / ANSWER PAYLOAD WHEN DEVICES CANNOT SHARE A LOCAL SIGNALING CHANNEL. NO PAYLOAD IS SENT TO A SERVER.</p>
         <button className="tac-button w-full justify-center" onClick={() => void createOffer()}><Link2 size={13} /> 1. GENERATE OFFER</button>
         {outbound ? <div className="border border-orange-400/20 bg-[#101510] p-2"><div className="flex items-center justify-between gap-2"><span className="text-[9px] tracking-[.12em] text-orange-200">{mode} PAYLOAD READY</span><button className="tac-square-button h-7 w-7" onClick={() => void copyOutbound()} aria-label="Copy pairing payload"><Clipboard size={13} /></button></div><div className="mt-2 flex items-center justify-center border border-orange-400/10 bg-[#0d110d] py-2"><canvas ref={canvasRef} className="max-w-full" aria-label="Manual pairing QR code" /></div><textarea className="tac-textarea mt-2 h-16" readOnly value={outbound} aria-label="Outgoing manual pairing payload" /></div> : null}
+        {confirmationCode ? <div className="border border-emerald-400/35 bg-emerald-400/5 px-2 py-2 text-center"><p className="text-[8px] tracking-[.12em] text-slate-400">OPERATOR CONFIRMATION CODE</p><p className="mt-1 font-mono text-lg tracking-[.35em] text-emerald-200">{confirmationCode}</p><p className="mt-1 text-[8px] leading-relaxed tracking-[.06em] text-slate-400">READ THIS CODE TO THE REMOTE OPERATOR. BOTH DEVICES MUST SEE THE SAME CODE BEFORE THE ANSWER IS PROCESSED.</p></div> : null}
         <div className="border-t border-orange-400/15 pt-3">
           <label className="tac-field-label flex items-center gap-2"><RadioTower size={12} /> 2. PASTE OR SCAN REMOTE PAYLOAD</label>
           <textarea className="tac-textarea mt-2 h-20" value={inbound} onChange={event => setInbound(event.target.value)} placeholder="PASTE OFFER OR ANSWER JSON HERE" />

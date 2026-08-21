@@ -1,8 +1,10 @@
 import { decryptMeshArchive, parseEncryptedArchive, rotateArchiveKey, type EncryptedMeshArchive } from "@/lib/mesh/crypto";
-import { inspectArchiveConflict, mergeArchiveState, type ArchiveConflictSummary, type MeshState } from "@/lib/mesh/types";
+import { buildArchiveDiff, inspectArchiveConflict, mergeArchiveState, type ArchiveConflictSummary, type ArchiveDiffRecord, type MeshState } from "@/lib/mesh/types";
 import { FileKey2, KeyRound, Replace, RotateCw, ShieldQuestion, Upload } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+
+const diffTone: Record<ArchiveDiffRecord["status"], string> = { NEW: "text-emerald-300", CHANGED: "text-amber-200", UNCHANGED: "text-slate-500" };
 
 export function ArchiveRecoveryPanel({ currentMesh, onImport }: { currentMesh: MeshState; onImport: (mesh: MeshState) => void }) {
   const [archive, setArchive] = useState<EncryptedMeshArchive | null>(null);
@@ -11,6 +13,9 @@ export function ArchiveRecoveryPanel({ currentMesh, onImport }: { currentMesh: M
   const [replacementPassphrase, setReplacementPassphrase] = useState("");
   const [recovered, setRecovered] = useState<MeshState | null>(null);
   const [conflicts, setConflicts] = useState<ArchiveConflictSummary | null>(null);
+  const [diffs, setDiffs] = useState<ArchiveDiffRecord[]>([]);
+
+  const clearReview = () => { setRecovered(null); setConflicts(null); setDiffs([]); };
 
   const loadArchive = async (file: File | undefined) => {
     if (!file) return;
@@ -18,14 +23,12 @@ export function ArchiveRecoveryPanel({ currentMesh, onImport }: { currentMesh: M
       const loaded = parseEncryptedArchive(await file.text());
       setArchive(loaded);
       setArchiveName(file.name);
-      setRecovered(null);
-      setConflicts(null);
+      clearReview();
       toast.success(`Archive staged: ${loaded.records.messages} alerts / ${loaded.records.resources} resources.`);
     } catch (error) {
       setArchive(null);
       setArchiveName("");
-      setRecovered(null);
-      setConflicts(null);
+      clearReview();
       toast.error(error instanceof Error ? error.message : "Archive could not be read.");
     }
   };
@@ -36,6 +39,7 @@ export function ArchiveRecoveryPanel({ currentMesh, onImport }: { currentMesh: M
       const next = await decryptMeshArchive(archive, importPassphrase);
       setRecovered(next);
       setConflicts(inspectArchiveConflict(currentMesh, next));
+      setDiffs(buildArchiveDiff(currentMesh, next));
       toast.success("Archive decrypted locally. Review record overlap before committing changes.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Archive recovery failed.");
@@ -45,8 +49,7 @@ export function ArchiveRecoveryPanel({ currentMesh, onImport }: { currentMesh: M
   const resolveImport = (resolution: "MERGE" | "REPLACE") => {
     if (!recovered) return;
     onImport(resolution === "MERGE" ? mergeArchiveState(currentMesh, recovered) : recovered);
-    setRecovered(null);
-    setConflicts(null);
+    clearReview();
     setImportPassphrase("");
     toast.success(resolution === "MERGE" ? "Archive records merged using the newest duplicate records." : "Local mesh state replaced with the recovered archive.");
   };
@@ -81,14 +84,11 @@ export function ArchiveRecoveryPanel({ currentMesh, onImport }: { currentMesh: M
         {recovered && conflicts ? <div className="border border-amber-300/30 bg-amber-300/5 p-2.5">
           <p className="text-[9px] tracking-[.13em] text-amber-100">LOCAL / ARCHIVE REVIEW</p>
           <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[8px] tracking-[.08em]"><span className="bg-black/20 p-1 text-slate-400">ALERTS<br /><b className="text-amber-100">{conflicts.overlappingMessages}</b></span><span className="bg-black/20 p-1 text-slate-400">RESOURCES<br /><b className="text-amber-100">{conflicts.conflictingResources}</b></span><span className="bg-black/20 p-1 text-slate-400">ZONES<br /><b className="text-amber-100">{conflicts.conflictingZones}</b></span></div>
+          <div className="mt-2 max-h-28 overflow-auto border border-amber-300/15 bg-black/20">{diffs.map(diff => <div key={`${diff.category}-${diff.id}`} className="flex items-center gap-1.5 border-b border-amber-300/10 px-2 py-1 last:border-0 text-[8px] tracking-[.06em]"><span className="w-12 text-slate-500">{diff.category}</span><span className={`w-16 ${diffTone[diff.status]}`}>{diff.status}</span><span className="min-w-0 flex-1 truncate text-slate-200">{diff.label}</span></div>)}</div>
           <p className="mt-2 text-[8px] leading-relaxed tracking-[.06em] text-slate-400">MERGE KEEPS THIS NODE’S IDENTITY AND CONNECTION STATE, then selects the newest duplicate resource or zone. REPLACE adopts the recovered archive in full.</p>
           <div className="mt-2 grid grid-cols-2 gap-2"><button className="tac-toggle justify-center" onClick={() => resolveImport("MERGE")}><RotateCw size={12} /> MERGE</button><button className="tac-button justify-center" onClick={() => resolveImport("REPLACE")}><Replace size={12} /> REPLACE</button></div>
         </div> : null}
-        <div className="mt-3 border-t border-orange-400/15 pt-3">
-          <label className="tac-field-label flex items-center gap-2"><KeyRound size={12} /> REPLACEMENT PASSPHRASE</label>
-          <input className="tac-input mt-2" type="password" value={replacementPassphrase} onChange={event => setReplacementPassphrase(event.target.value)} placeholder="8+ CHARACTERS" />
-          <button className="tac-toggle mt-2 w-full justify-center" onClick={() => void rotateKey()}><RotateCw size={13} /> ROTATE + DOWNLOAD</button>
-        </div>
+        <div className="mt-3 border-t border-orange-400/15 pt-3"><label className="tac-field-label flex items-center gap-2"><KeyRound size={12} /> REPLACEMENT PASSPHRASE</label><input className="tac-input mt-2" type="password" value={replacementPassphrase} onChange={event => setReplacementPassphrase(event.target.value)} placeholder="8+ CHARACTERS" /><button className="tac-toggle mt-2 w-full justify-center" onClick={() => void rotateKey()}><RotateCw size={13} /> ROTATE + DOWNLOAD</button></div>
       </div>
     </section>
   );
